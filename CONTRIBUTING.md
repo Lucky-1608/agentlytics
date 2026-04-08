@@ -165,21 +165,39 @@ Reads from `~/.local/share/opencode/opencode.db`:
 - SQLite database with `session`, `message`, and `project` tables
 - Messages queried directly via SQL with full content, model, and token data
 
-### Kiro CLI
+### Kiro
 
 Reads from `~/.kiro/sessions.db`:
 - SQLite database with `sessions` and `messages` tables
 - Sessions keyed by directory path with UUID identifiers
 - Messages contain role, content, model, and timestamps
 
+### Kilo Code CLI
+
+Reads from platform-specific SQLite database:
+- Linux: `~/.local/share/kilo/kilo.db`
+- macOS: `~/Library/Application Support/kilo/kilo.db`
+- Windows: `%APPDATA%/kilo/kilo.db`
+
+Database tables:
+- `session` — session metadata with id, title, directory, timestamps
+- `message` — messages with role, content, model, usage
+- `part` — message content blocks including tool calls and tool results
+- Tool calls extracted from `part` table where `type: 'tool'`
+- Token usage from `part` table where `type: 'step-finish'`
+
 ### Cline CLI
 
-Reads from `~/.cline/data/tasks/<task-id>/`:
-- `task_metadata.json` — task metadata including working directory
-- `api_conversation_history.json` — full conversation in OpenAI format
-- `ui_messages.json` — UI messages (optional)
+Reads from platform-specific session directories:
+- Linux: `~/.cline/data/sessions/<session-id>/`
+- macOS: `~/Library/Application Support/cline/data/sessions/<session-id>/`
+- Windows: `%APPDATA%/cline/data/sessions/<session-id>/`
+
+Files:
+- `<session-id>.json` — session metadata including cwd, model, started_at
+- `<session-id>.messages.json` — full conversation in OpenAI format
 - Supports token extraction from `usage` field
-- Tool calls extracted from `tool_calls` array
+- Tool calls extracted from `tool_use` content blocks
 
 ---
 
