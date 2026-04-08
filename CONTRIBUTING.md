@@ -165,6 +165,22 @@ Reads from `~/.local/share/opencode/opencode.db`:
 - SQLite database with `session`, `message`, and `project` tables
 - Messages queried directly via SQL with full content, model, and token data
 
+### Kiro CLI
+
+Reads from `~/.kiro/sessions.db`:
+- SQLite database with `sessions` and `messages` tables
+- Sessions keyed by directory path with UUID identifiers
+- Messages contain role, content, model, and timestamps
+
+### Cline CLI
+
+Reads from `~/.cline/data/tasks/<task-id>/`:
+- `task_metadata.json` — task metadata including working directory
+- `api_conversation_history.json` — full conversation in OpenAI format
+- `ui_messages.json` — UI messages (optional)
+- Supports token extraction from `usage` field
+- Tool calls extracted from `tool_calls` array
+
 ---
 
 ## Database Schema

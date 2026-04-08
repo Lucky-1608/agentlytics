@@ -17,6 +17,8 @@ export const EDITOR_COLORS = {
   'goose': '#333333',
   'kiro': '#ff9900',
   'codebuff': '#44ff00',
+  'cline-cli': '#00d4ff',
+  'kilocode-cli': '#8b5cf6',
 };
 
 export const EDITOR_LABELS = {
@@ -38,6 +40,8 @@ export const EDITOR_LABELS = {
   'goose': 'Goose',
   'kiro': 'Kiro',
   'codebuff': 'Codebuff',
+  'cline-cli': 'Cline CLI',
+  'kilocode-cli': 'Kilo Code CLI',
 };
 
 export function editorColor(src) {
