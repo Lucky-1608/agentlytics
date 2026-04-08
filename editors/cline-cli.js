@@ -55,7 +55,11 @@ function getChats() {
     }
   } catch {}
 
-  chats.sort((a, b) => (b.lastUpdatedAt || b.createdAt || 0) - (a.lastUpdatedAt || b.createdAt || 0));
+  chats.sort((a, b) => {
+    const ta = a.lastUpdatedAt || a.createdAt || 0;
+    const tb = b.lastUpdatedAt || b.createdAt || 0;
+    return tb - ta;
+  });
   return chats;
 }
 
@@ -98,10 +102,13 @@ function getMessages(chat) {
       }
 
       if (msg.tool_calls && msg.tool_calls.length > 0) {
-        message._toolCalls = msg.tool_calls.map(tc => ({
-          name: tc.function?.name || tc.name || 'unknown',
-          args: tc.function?.arguments || tc.arguments || {},
-        }));
+        message._toolCalls = msg.tool_calls.map(tc => {
+          let args = tc.function?.arguments || tc.arguments || {};
+          if (typeof args === 'string') {
+            try { args = JSON.parse(args); } catch { args = {}; }
+          }
+          return { name: tc.function?.name || tc.name || 'unknown', args };
+        });
       }
 
       messages.push(message);

@@ -167,10 +167,10 @@ Reads from `~/.local/share/opencode/opencode.db`:
 
 ### Kiro
 
-Reads from `~/.kiro/sessions.db`:
-- SQLite database with `sessions` and `messages` tables
-- Sessions keyed by directory path with UUID identifiers
-- Messages contain role, content, model, and timestamps
+Reads from `~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/`:
+- `workspace-sessions/` — base64-encoded workspace folder names
+- Per-workspace `.chat` files with JSON session metadata and messages
+- Messages stored in blob format with role, content, model, and timestamps
 
 ### Kilo Code CLI
 

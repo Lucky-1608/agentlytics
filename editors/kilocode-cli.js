@@ -22,7 +22,8 @@ function getChats() {
 
   let db;
   try {
-    db = require('better-sqlite3')(KILO_DB_PATH);
+    const Database = require('better-sqlite3');
+    db = new Database(KILO_DB_PATH, { readonly: true });
   } catch { return chats; }
 
   try {
@@ -60,7 +61,8 @@ function getMessages(chat) {
 
   let db;
   try {
-    db = require('better-sqlite3')(KILO_DB_PATH);
+    const Database = require('better-sqlite3');
+    db = new Database(KILO_DB_PATH, { readonly: true });
   } catch { return messages; }
 
   try {
