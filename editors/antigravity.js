@@ -43,7 +43,7 @@ function getModelMap() {
       const label = c.label;
       if (key && label) _modelMap[key] = label;
     }
-  } catch {}
+  } catch { }
   return _modelMap;
 }
 
@@ -825,8 +825,8 @@ function parseStep(step) {
 
   // Skip non-content steps
   if (type === 'CORTEX_STEP_TYPE_CHECKPOINT' || type === 'CORTEX_STEP_TYPE_RETRIEVE_MEMORY' ||
-      type === 'CORTEX_STEP_TYPE_MEMORY' || type === 'CORTEX_STEP_TYPE_TODO_LIST' ||
-      type === 'CORTEX_STEP_TYPE_EXIT_PLAN_MODE' || type === 'CORTEX_STEP_TYPE_PROXY_WEB_SERVER') {
+    type === 'CORTEX_STEP_TYPE_MEMORY' || type === 'CORTEX_STEP_TYPE_TODO_LIST' ||
+    type === 'CORTEX_STEP_TYPE_EXIT_PLAN_MODE' || type === 'CORTEX_STEP_TYPE_PROXY_WEB_SERVER') {
     return null;
   }
 

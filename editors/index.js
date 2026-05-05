@@ -13,10 +13,12 @@ const commandcode = require('./commandcode');
 const goose = require('./goose');
 const kiro = require('./kiro');
 const codebuff = require('./codebuff');
+const kiroCli = require('./kiro-cli');
 const clineCli = require('./cline-cli');
 const kilocodeCli = require('./kilocode-cli');
+const hermes = require('./hermes');
 
-const editors = [cursor, windsurf, antigravity, claude, vscode, zed, opencode, codex, gemini, copilot, cursorAgent, commandcode, goose, kiro, codebuff, clineCli, kilocodeCli];
+const editors = [cursor, windsurf, antigravity, claude, vscode, zed, opencode, codex, gemini, copilot, cursorAgent, commandcode, goose, kiro, codebuff, kiroCli, clineCli, kilocodeCli, hermes];
 
 // Build a unified source → display-label map from all editor modules
 const editorLabels = {};

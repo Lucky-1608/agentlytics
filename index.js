@@ -387,6 +387,10 @@ const BOT_STYLES = [
   logUpdate.done();
   console.log('');
 
+  if (isUiDev) {
+    console.log(chalk.dim('  ⚡ API Backend running in development mode (proxying from Vite)\n'));
+  }
+
   // In collect-only mode, exit after cache is built
   if (collectOnly) {
     const cacheDbPath = path.join(os.homedir(), '.agentlytics', 'cache.db');

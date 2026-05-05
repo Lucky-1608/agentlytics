@@ -7,7 +7,7 @@ const { calculateCost, getModelPricing, normalizeModelName } = require('./pricin
 
 const CACHE_DIR = path.join(os.homedir(), '.agentlytics');
 const CACHE_DB = path.join(CACHE_DIR, 'cache.db');
-const SCHEMA_VERSION = 7; // bump this when schema changes to auto-revalidate
+const SCHEMA_VERSION = 12; // bump this when schema changes to auto-revalidate
 
 /**
  * Normalize a folder path for consistent storage/lookup.
@@ -23,24 +23,30 @@ function normalizeFolder(folder) {
   folder = folder.replace(/^file:\/\//, '');
 
   if (process.platform === 'win32') {
+    // Strip leading slash if it precedes a drive letter like /c:/Users
+    if (/^\/[A-Za-z]:/.test(folder)) {
+      folder = folder.slice(1);
+    }
+    // Convert backslashes to forward slashes first to easily check paths
+    folder = folder.replace(/\\/g, '/');
+
+    // Unconditionally remove OneDrive from the path on Windows
+    const lower = folder.toLowerCase();
+    if (lower.includes('/onedrive/')) {
+      const idx = lower.indexOf('/onedrive/');
+      folder = folder.slice(0, idx) + '/' + folder.slice(idx + '/onedrive/'.length);
+    }
+
     try {
       folder = path.resolve(folder);
-      try {
-        folder = fs.realpathSync.native(folder);
-      } catch {
-        // realpathSync.native failed — uppercase drive letter, lowercase rest
-        if (/^[a-zA-Z]:/.test(folder)) {
-          folder = folder[0].toUpperCase() + folder.slice(1);
-        }
-      }
       // Remove trailing backslash (but keep "C:\")
       folder = folder.replace(/\\$/, '');
-      if (/^[A-Z]:$/.test(folder)) folder += '\\';
-      // Convert backslashes to forward slashes
-      folder = folder.replace(/\\/g, '/');
+      if (/^[A-Za-z]:$/.test(folder)) folder += '\\';
+      // Lowercase entire path on Windows for consistent matching
+      folder = folder.toLowerCase().replace(/\\/g, '/');
     } catch {
       // If all else fails, just return as-is with forward slashes
-      folder = folder.replace(/\\/g, '/');
+      folder = folder.toLowerCase().replace(/\\/g, '/');
     }
   } else {
     try {
@@ -70,14 +76,18 @@ function initDb() {
       if (!row || parseInt(row.value) !== SCHEMA_VERSION) {
         for (const suffix of ['', '-wal', '-shm']) {
           const f = CACHE_DB + suffix;
-          if (fs.existsSync(f)) fs.unlinkSync(f);
+          if (fs.existsSync(f)) {
+            try { fs.unlinkSync(f); } catch {}
+          }
         }
       }
     } catch {
       // Corrupt or unreadable DB — wipe it
       for (const suffix of ['', '-wal', '-shm']) {
         const f = CACHE_DB + suffix;
-        if (fs.existsSync(f)) fs.unlinkSync(f);
+        if (fs.existsSync(f)) {
+          try { fs.unlinkSync(f); } catch {}
+        }
       }
     }
   }
@@ -85,6 +95,23 @@ function initDb() {
   db = new Database(CACHE_DB);
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = NORMAL');
+
+  try {
+    const row = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();
+    if (!row || parseInt(row.value) !== SCHEMA_VERSION) {
+      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
+      for (const t of tables) {
+        try { db.prepare(`DROP TABLE IF EXISTS ${t.name}`).run(); } catch {}
+      }
+    }
+  } catch {
+    try {
+      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
+      for (const t of tables) {
+        try { db.prepare(`DROP TABLE IF EXISTS ${t.name}`).run(); } catch {}
+      }
+    } catch {}
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS chats (
@@ -510,11 +537,20 @@ function getCachedOverview(opts = {}) {
     WHERE folder IS NOT NULL${whereAnd}
     GROUP BY folder ORDER BY count DESC LIMIT 20
   `).all(...params);
-  const topProjects = projects.map(p => ({
-    name: p.folder.split(/[/\\]/).slice(-2).join('/'),
-    fullPath: p.folder,
-    count: p.count,
-  }));
+  const topProjects = projects.map(p => {
+    let name = p.folder.split('/').slice(-2).join('/');
+    if (fs.existsSync(p.folder)) {
+      try {
+        const real = fs.realpathSync.native(p.folder);
+        name = real.split(/[/\\]/).slice(-2).join('/');
+      } catch {}
+    }
+    return {
+      name,
+      fullPath: p.folder,
+      count: p.count,
+    };
+  });
 
   // Timestamps
   const oldest = db.prepare(`SELECT MIN(COALESCE(last_updated_at, created_at)) as ts FROM chats${where}`).get(...params).ts;
@@ -752,9 +788,16 @@ function getCachedProjects(opts = {}) {
       tokensEstimated = true;
     }
 
+    let name = proj.folder.split('/').pop();
+    if (fs.existsSync(proj.folder)) {
+      try {
+        name = path.basename(fs.realpathSync.native(proj.folder));
+      } catch {}
+    }
+
     result.push({
       folder: proj.folder,
-      name: proj.folder.split(/[/\\]/).pop(),
+      name: name,
       totalSessions: proj.totalSessions,
       editors: proj.editors,
       firstSeen: proj.firstSeen,

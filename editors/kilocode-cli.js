@@ -6,12 +6,23 @@ const name = 'kilocode-cli';
 const sources = ['kilocode-cli'];
 
 function getKiloDbPath() {
+  const paths = [];
+
   if (process.platform === 'win32') {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'kilo', 'kilo.db');
+    paths.push(path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'kilo', 'kilo.db'));
+    // Fallback for Windows systems using Linux-style XDG paths
+    paths.push(path.join(os.homedir(), '.local', 'share', 'kilo', 'kilo.db'));
   } else if (process.platform === 'darwin') {
-    return path.join(os.homedir(), 'Library', 'Application Support', 'kilo', 'kilo.db');
+    paths.push(path.join(os.homedir(), 'Library', 'Application Support', 'kilo', 'kilo.db'));
+  } else {
+    paths.push(path.join(os.homedir(), '.local', 'share', 'kilo', 'kilo.db'));
   }
-  return path.join(os.homedir(), '.local', 'share', 'kilo', 'kilo.db');
+
+  for (const p of paths) {
+    if (fs.existsSync(p)) return p;
+  }
+
+  return paths[0]; // Return default if none found
 }
 
 const KILO_DB_PATH = getKiloDbPath();
@@ -28,12 +39,27 @@ function getChats() {
 
   try {
     const sessions = db.prepare(`
-      SELECT id, title, directory, time_created, time_updated
-      FROM session
-      ORDER BY time_updated DESC
+      SELECT s.id, s.title, s.directory, s.time_created, s.time_updated,
+             (SELECT count(*) FROM message m WHERE m.session_id = s.id) as msg_count
+      FROM session s
+      ORDER BY s.time_updated DESC
     `).all();
 
     for (const session of sessions) {
+      // Aggregate tokens for the session (optional but helpful for cost)
+      let totalInput = 0;
+      let totalOutput = 0;
+      try {
+        const msgs = db.prepare('SELECT data FROM message WHERE session_id = ?').all(session.id);
+        for (const m of msgs) {
+          const d = JSON.parse(m.data);
+          if (d.tokens) {
+            totalInput += (d.tokens.input || 0);
+            totalOutput += (d.tokens.output || 0);
+          }
+        }
+      } catch {}
+
       chats.push({
         source: 'kilocode-cli',
         composerId: session.id,
@@ -43,8 +69,10 @@ function getChats() {
         mode: 'kilocode',
         folder: session.directory || null,
         encrypted: false,
-        bubbleCount: 0,
+        bubbleCount: session.msg_count || 0,
         _sessionId: session.id,
+        _inputTokens: totalInput || undefined,
+        _outputTokens: totalOutput || undefined,
       });
     }
   } catch {}
@@ -67,108 +95,78 @@ function getMessages(chat) {
 
   try {
     const messagesData = db.prepare(`
-      SELECT id, data, time_created
+      SELECT id, data, time_created, 'message' as _type
       FROM message
       WHERE session_id = ?
-      ORDER BY time_created ASC
     `).all(chat._sessionId);
 
     const partsData = db.prepare(`
-      SELECT id, data, time_created
+      SELECT id, data, time_created, 'part' as _type
       FROM part
       WHERE session_id = ?
-      ORDER BY time_created ASC
     `).all(chat._sessionId);
 
-    let currentRole = 'user';
-    let currentContent = '';
-    let currentModel = null;
-    let currentTokens = null;
+    // Combine and sort by time_created to interleave messages and their parts
+    const timeline = [...messagesData, ...partsData].sort((a, b) => a.time_created - b.time_created);
 
-    for (const msg of messagesData) {
-      try {
-        const data = JSON.parse(msg.data);
-        if (data.role === 'user') {
-          if (currentContent || currentRole === 'assistant') {
-            const m = { role: currentRole, content: currentContent };
-            if (currentModel) m._model = currentModel;
-            if (currentTokens) {
-              if (currentTokens.input) m._inputTokens = currentTokens.input;
-              if (currentTokens.output) m._outputTokens = currentTokens.output;
-            }
-            messages.push(m);
-          }
-          currentRole = 'user';
-          currentContent = data.content || '';
-          currentModel = data.model?.providerID && data.model?.modelID
-            ? `${data.model.providerID}/${data.model.modelID}`
-            : data.model?.modelID || null;
-          currentTokens = null;
-        } else if (data.role === 'assistant') {
-          if (currentRole === 'user' && currentContent) {
-            const m = { role: 'user', content: currentContent };
-            if (currentModel) m._model = currentModel;
-            messages.push(m);
-          }
-          currentRole = 'assistant';
-          currentContent = '';
+    let currentMsg = null;
 
-          if (data.model?.modelID) {
-            currentModel = data.model?.providerID && data.model?.modelID
-              ? `${data.model.providerID}/${data.model.modelID}`
-              : data.model.modelID;
-          }
-          if (data.tokens) currentTokens = data.tokens;
+    for (const item of timeline) {
+      const data = JSON.parse(item.data);
+
+      if (item._type === 'message') {
+        // If we have a pending message, push it
+        if (currentMsg && (currentMsg.content || currentMsg._toolCalls)) {
+          messages.push(currentMsg);
         }
-      } catch {}
-    }
 
-    for (const part of partsData) {
-      try {
-        const data = JSON.parse(part.data);
-
+        // Start a new message
+        const role = data.role === 'assistant' ? 'assistant' : 'user';
+        currentMsg = {
+          role,
+          content: data.content || '',
+          _model: data.model?.providerID && data.model?.modelID
+            ? `${data.model.providerID}/${data.model.modelID}`
+            : data.model?.modelID || null,
+        };
+        
+        if (data.tokens) {
+          if (data.tokens.input) currentMsg._inputTokens = data.tokens.input;
+          if (data.tokens.output) currentMsg._outputTokens = data.tokens.output;
+        }
+      } else if (item._type === 'part' && currentMsg) {
         if (data.type === 'text' && data.text) {
-          currentContent += (currentContent ? '\n\n' : '') + data.text;
+          currentMsg.content += (currentMsg.content ? '\n\n' : '') + data.text;
         } else if (data.type === 'tool') {
           const toolName = data.tool || 'tool';
           const toolInput = data.state?.input || {};
-          currentContent += (currentContent ? '\n\n' : '') + `[tool-call: ${toolName}]`;
-          if (toolInput.command) currentContent += ` ${toolInput.command}`;
-          else if (toolInput.filePath) currentContent += ` ${toolInput.filePath}`;
-          messages.push({
-            role: 'assistant',
-            content: currentContent,
-            _toolCalls: [{
-              name: toolName,
-              args: toolInput,
-            }],
-          });
-          currentContent = '';
+          currentMsg.content += (currentMsg.content ? '\n\n' : '') + `[tool-call: ${toolName}]`;
+          
+          if (!currentMsg._toolCalls) currentMsg._toolCalls = [];
+          currentMsg._toolCalls.push({ name: toolName, args: toolInput });
 
           if (data.state?.output && !data.state.error) {
-            currentContent += `[tool-result]\n${data.state.output}`;
+            currentMsg.content += `\n[tool-result]\n${data.state.output}`;
           }
         } else if (data.type === 'file') {
-          currentContent += (currentContent ? '\n\n' : '') + `[file: ${data.filename || data.url}]`;
+          currentMsg.content += (currentMsg.content ? '\n\n' : '') + `[file: ${data.filename || data.url}]`;
         } else if (data.type === 'step-finish' && data.tokens) {
-          currentTokens = data.tokens;
+          if (data.tokens.input) currentMsg._inputTokens = data.tokens.input;
+          if (data.tokens.output) currentMsg._outputTokens = data.tokens.output;
         }
-      } catch {}
+      }
     }
 
-    if (currentContent || currentRole === 'assistant') {
-      const m = { role: currentRole, content: currentContent };
-      if (currentModel) m._model = currentModel;
-      if (currentTokens) {
-        if (currentTokens.input) m._inputTokens = currentTokens.input;
-        if (currentTokens.output) m._outputTokens = currentTokens.output;
-      }
-      if (m.content || m._toolCalls) messages.push(m);
+    // Push the last message
+    if (currentMsg && (currentMsg.content || currentMsg._toolCalls)) {
+      messages.push(currentMsg);
     }
-  } catch {}
+  } catch (err) {
+    console.error('Kilo Code parse error:', err);
+  }
 
   try { db.close(); } catch {}
-  return messages.filter(m => m.content || m._toolCalls);
+  return messages;
 }
 
 function resetCache() {}

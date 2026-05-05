@@ -50,7 +50,7 @@ function getChats() {
 
     let files;
     try {
-      files = fs.readdirSync(chatsDir).filter(f => f.startsWith('session-') && f.endsWith('.json'));
+      files = fs.readdirSync(chatsDir).filter(f => (f.startsWith('session-') && (f.endsWith('.json') || f.endsWith('.jsonl'))));
     } catch { continue; }
 
     // Resolve folder from projects.json mapping
@@ -60,13 +60,27 @@ function getChats() {
       const fullPath = path.join(chatsDir, file);
       try {
         const raw = fs.readFileSync(fullPath, 'utf-8');
-        const record = JSON.parse(raw);
-        if (!record || !record.messages) continue;
+        let record = null;
+        let messages = [];
 
-        const sessionId = record.sessionId || file.replace('.json', '');
-        const messages = record.messages || [];
+        if (file.endsWith('.jsonl')) {
+          const lines = raw.split('\n').filter(Boolean);
+          for (const line of lines) {
+            try {
+              const obj = JSON.parse(line);
+              if (obj.sessionId && !record) record = obj;
+              if (obj.type && (obj.type === 'user' || obj.type === 'gemini')) messages.push(obj);
+              if (obj.$set && obj.$set.lastUpdated && record) record.lastUpdated = obj.$set.lastUpdated;
+            } catch {}
+          }
+        } else {
+          record = JSON.parse(raw);
+          messages = record.messages || [];
+        }
 
-        // Extract first user prompt for title
+        if (!record) continue;
+
+        const sessionId = record.sessionId || file.replace(/\.jsonl?$/, '');
         const firstUser = messages.find(m => m.type === 'user');
         const firstPrompt = extractTextContent(firstUser?.content);
 
@@ -112,15 +126,27 @@ function getMessages(chat) {
   const filePath = chat._fullPath;
   if (!filePath || !fs.existsSync(filePath)) return [];
 
-  let record;
+  let messages = [];
   try {
-    record = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    if (filePath.endsWith('.jsonl')) {
+      const lines = raw.split('\n').filter(Boolean);
+      for (const line of lines) {
+        try {
+          const obj = JSON.parse(line);
+          if (obj.type) messages.push(obj);
+        } catch {}
+      }
+    } else {
+      const record = JSON.parse(raw);
+      messages = record.messages || [];
+    }
   } catch { return []; }
 
-  if (!record || !record.messages) return [];
+  if (messages.length === 0) return [];
 
   const result = [];
-  for (const msg of record.messages) {
+  for (const msg of messages) {
     const type = msg.type;
     const text = extractTextContent(msg.content || msg.displayContent);
 

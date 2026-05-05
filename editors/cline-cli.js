@@ -6,17 +6,34 @@ const name = 'cline-cli';
 const sources = ['cline-cli'];
 
 function getClineDir() {
+  const paths = [];
   if (process.platform === 'win32') {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'cline');
+    paths.push(path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'cline'));
+    paths.push(path.join(os.homedir(), '.cline'));
   } else if (process.platform === 'darwin') {
-    return path.join(os.homedir(), 'Library', 'Application Support', 'cline');
+    paths.push(path.join(os.homedir(), 'Library', 'Application Support', 'cline'));
+  } else {
+    paths.push(path.join(os.homedir(), '.cline'));
   }
-  return path.join(os.homedir(), '.cline');
+
+  for (const p of paths) {
+    if (fs.existsSync(p)) return p;
+  }
+  return paths[0];
 }
 
 const CLINE_DIR = getClineDir();
 const CLINE_DATA_DIR = path.join(CLINE_DIR, 'data');
-const SESSIONS_DIR = path.join(CLINE_DATA_DIR, 'sessions');
+
+function getSessionsDir() {
+  const sessionsPath = path.join(CLINE_DATA_DIR, 'sessions');
+  const tasksPath = path.join(CLINE_DATA_DIR, 'tasks');
+
+  if (fs.existsSync(tasksPath)) return tasksPath;
+  return sessionsPath;
+}
+
+const SESSIONS_DIR = getSessionsDir();
 
 function getChats() {
   const chats = [];
@@ -28,97 +45,123 @@ function getChats() {
       const sessionPath = path.join(SESSIONS_DIR, sessionDir);
       if (!fs.statSync(sessionPath).isDirectory()) continue;
 
-      const sessionJsonPath = path.join(sessionPath, `${sessionDir}.json`);
-      let sessionData = null;
+      const uiMessagesPath = path.join(sessionPath, 'ui_messages.json');
+      if (!fs.existsSync(uiMessagesPath)) continue;
+
+      let messages = [];
       try {
-        sessionData = JSON.parse(fs.readFileSync(sessionJsonPath, 'utf-8'));
+        messages = JSON.parse(fs.readFileSync(uiMessagesPath, 'utf-8'));
       } catch { continue; }
 
-      if (!sessionData) continue;
+      if (!Array.isArray(messages) || messages.length === 0) continue;
 
-      const startedAt = sessionData.started_at ? new Date(sessionData.started_at).getTime() : null;
-      const endedAt = sessionData.ended_at ? new Date(sessionData.ended_at).getTime() : startedAt;
+      // The first message is usually the task prompt
+      const taskMessage = messages.find(m => m.type === 'say' && m.say === 'task');
+      const prompt = taskMessage ? taskMessage.text : null;
+
+      // Extract folder (CWD) from the first api_req_started message if possible
+      let folder = null;
+      const firstApiReq = messages.find(m => m.type === 'say' && m.say === 'api_req_started');
+      if (firstApiReq && firstApiReq.text) {
+        try {
+          const data = JSON.parse(firstApiReq.text);
+          const request = data.request || '';
+          const cwdMatch = request.match(/Current Working Directory \((.*?)\) Files/);
+          if (cwdMatch) {
+            folder = cwdMatch[1].replace(/\\/g, '/');
+          }
+        } catch {}
+      }
+
+      const startedAt = messages[0].ts || null;
+      const endedAt = messages[messages.length - 1].ts || startedAt;
 
       chats.push({
         source: 'cline-cli',
-        composerId: sessionData.session_id || sessionDir,
-        name: sessionData.metadata?.title || sessionData.prompt?.substring(0, 100) || null,
+        composerId: sessionDir,
+        name: prompt ? (prompt.length > 100 ? prompt.substring(0, 100) + '...' : prompt) : 'Untitled Task',
         createdAt: startedAt,
         lastUpdatedAt: endedAt,
         mode: 'cline-cli',
-        folder: sessionData.cwd || sessionData.workspace_root || null,
+        folder,
         encrypted: false,
-        bubbleCount: 0,
+        bubbleCount: messages.length,
         _sessionId: sessionDir,
-        _messagesPath: sessionData.messages_path,
+        _messagesPath: uiMessagesPath,
       });
     }
-  } catch {}
+  } catch { }
 
-  chats.sort((a, b) => {
-    const ta = a.lastUpdatedAt || a.createdAt || 0;
-    const tb = b.lastUpdatedAt || b.createdAt || 0;
-    return tb - ta;
-  });
+  chats.sort((a, b) => (b.lastUpdatedAt || 0) - (a.lastUpdatedAt || 0));
   return chats;
 }
 
 function getMessages(chat) {
   const messages = [];
-  if (!chat._sessionId || !chat._messagesPath) return messages;
-
-  if (!fs.existsSync(chat._messagesPath)) return messages;
+  if (!chat._messagesPath || !fs.existsSync(chat._messagesPath)) return messages;
 
   try {
-    const messagesFile = JSON.parse(fs.readFileSync(chat._messagesPath, 'utf-8'));
-    const messagesData = Array.isArray(messagesFile) ? messagesFile : (messagesFile.messages || []);
+    const rawMessages = JSON.parse(fs.readFileSync(chat._messagesPath, 'utf-8'));
 
-    for (const msg of messagesData) {
-      const role = msg.role === 'user' ? 'user' : msg.role === 'assistant' ? 'assistant' : msg.role === 'system' ? 'system' : null;
-      if (!role) continue;
-
+    for (const msg of rawMessages) {
+      let role = null;
       let content = '';
-      if (Array.isArray(msg.content)) {
-        content = msg.content.map(c => {
-          if (typeof c === 'string') return c;
-          if (c.type === 'text') return c.text || '';
-          if (c.type === 'tool_use') return `[tool-call: ${c.name}]`;
-          if (c.type === 'tool_result') return c.content || '';
-          if (c.type === 'thinking') return c.thinking || '';
-          return c.text || c.content || '';
-        }).join('');
-      } else if (typeof msg.content === 'string') {
-        content = msg.content;
+      let toolCalls = null;
+
+      if (msg.type === 'say') {
+        if (msg.say === 'task') {
+          role = 'user';
+          content = msg.text || '';
+        } else if (msg.say === 'api_req_started' && msg.text) {
+          // This contains the assistant's request and thought process
+          try {
+            const data = JSON.parse(msg.text);
+            role = 'assistant';
+            content = data.request || '';
+            // If it has usage data, extract it
+            if (data.tokensIn || data.tokensOut) {
+              msg._usage = { input: data.tokensIn, output: data.tokensOut };
+            }
+          } catch { }
+        } else if (msg.say === 'user_feedback') {
+          role = 'user';
+          content = msg.text || '';
+        } else if (msg.say === 'reasoning') {
+          role = 'assistant';
+          content = msg.text || '';
+        } else if (msg.say === 'tool_use' && msg.text) {
+          role = 'assistant';
+          content = `[tool-call: ${msg.say}] ${msg.text}`;
+        }
+      } else if (msg.type === 'ask') {
+        if (msg.ask === 'followup' && msg.text) {
+          try {
+            const data = JSON.parse(msg.text);
+            role = 'assistant';
+            content = data.question || '';
+          } catch { }
+        } else if (msg.ask === 'command' && msg.text) {
+          role = 'assistant';
+          content = `[command] ${msg.text}`;
+        }
       }
 
-      if (!content) continue;
-
-      const message = { role, content };
-
-      if (msg.model) message._model = msg.model;
-      if (msg.usage) {
-        message._inputTokens = msg.usage.prompt_tokens || msg.usage.input_tokens || null;
-        message._outputTokens = msg.usage.completion_tokens || msg.usage.output_tokens || null;
+      if (role && content) {
+        const m = { role, content };
+        if (msg.modelInfo?.modelId) m._model = msg.modelInfo.modelId;
+        if (msg._usage) {
+          m._inputTokens = msg._usage.input;
+          m._outputTokens = msg._usage.output;
+        }
+        messages.push(m);
       }
-
-      if (msg.tool_calls && msg.tool_calls.length > 0) {
-        message._toolCalls = msg.tool_calls.map(tc => {
-          let args = tc.function?.arguments || tc.arguments || {};
-          if (typeof args === 'string') {
-            try { args = JSON.parse(args); } catch { args = {}; }
-          }
-          return { name: tc.function?.name || tc.name || 'unknown', args };
-        });
-      }
-
-      messages.push(message);
     }
-  } catch {}
+  } catch { }
 
   return messages;
 }
 
-function resetCache() {}
+function resetCache() { }
 
 function getMCPServers() {
   const { parseMcpConfigFile } = require('./base');

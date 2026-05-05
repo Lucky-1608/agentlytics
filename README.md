@@ -158,7 +158,7 @@ npx agentlytics --collect
 | **Kilo Code CLI** | ✅ | ✅ | ✅ | ✅ |
 | **Cline CLI** | ✅ | ✅ | ✅ | ✅ |
 
-> Windsurf, Windsurf Next, and Antigravity must be running during scan.
+> Windsurf and Windsurf Next must be running during scan.
 
 ## Relay
 
@@ -268,7 +268,7 @@ All endpoints accept optional `editor` filter. See **[API.md](API.md)** for full
 
 ## Roadmap
 
-- [ ] **Offline Windsurf/Antigravity support** — Read cascade data from local file structure instead of requiring the app to be running (see below)
+- [ ] **Offline Windsurf support** — Read cascade data from local file structure instead of requiring the app to be running (see below)
 - [ ] **LLM-powered insights** — Use an LLM to analyze session patterns, generate summaries, detect coding habits, and surface actionable recommendations
 - [ ] **Linux & Windows support** — Adapt editor paths for non-macOS platforms
 - [ ] **Export & reports** — PDF/CSV export of analytics and session data
@@ -276,7 +276,7 @@ All endpoints accept optional `editor` filter. See **[API.md](API.md)** for full
 
 ## Contributions Needed
 
-**Windsurf / Windsurf Next / Antigravity offline reading** — Currently these editors require their app to be running because data is fetched via ConnectRPC from the language server process. Unlike Cursor or Claude Code, there's no known local file structure to read cascade history from. If you know where Windsurf stores trajectory data on disk, or can help reverse-engineer the storage format, contributions are very welcome.
+**Windsurf / Windsurf Next offline reading** — Currently these editors require their app to be running because data is fetched via ConnectRPC from the language server process. Unlike Cursor, Claude Code, or Antigravity, there's no known local file structure to read cascade history from. If you know where Windsurf stores trajectory data on disk, or can help reverse-engineer the storage format, contributions are very welcome.
 
 **LLM-based analytics** — We'd love to add intelligent analysis on top of the raw data — session summaries, coding pattern detection, productivity insights, and natural language queries over your agent history. If you have ideas or want to build this, open an issue or PR.
 
