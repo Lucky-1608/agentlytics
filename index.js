@@ -253,6 +253,7 @@ const WINDSURF_VARIANTS = [
   { name: 'Windsurf', app: '/Applications/Windsurf.app', dataDir: path.join(HOME, '.codeium', 'windsurf'), ide: 'windsurf' },
   { name: 'Windsurf Next', app: '/Applications/Windsurf Next.app', dataDir: path.join(HOME, '.codeium', 'windsurf-next'), ide: 'windsurf-next' },
   { name: 'Antigravity', app: '/Applications/Antigravity.app', dataDir: path.join(HOME, '.codeium', 'antigravity'), ide: 'antigravity' },
+  { name: 'Antigravity IDE', app: '/Applications/Antigravity IDE.app', dataDir: path.join(HOME, '.codeium', 'antigravity-ide'), ide: 'antigravity-ide' },
 ];
 
 (() => {

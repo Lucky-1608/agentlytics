@@ -24,6 +24,7 @@ const EDITOR_ICONS = {
   'windsurf': 'windsurf',
   'windsurf-next': 'windsurf',
   'antigravity': 'antigravity',
+  'antigravity-ide': 'antigravity',
   'claude-code': 'claude',
   'claude': 'claude',
   'vscode': 'vscode',

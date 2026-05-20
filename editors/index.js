@@ -1,6 +1,7 @@
 const cursor = require('./cursor');
 const windsurf = require('./windsurf');
 const antigravity = require('./antigravity');
+const antigravityIde = require('./antigravity-ide');
 const claude = require('./claude');
 const vscode = require('./vscode');
 const zed = require('./zed');
@@ -18,7 +19,7 @@ const clineCli = require('./cline-cli');
 const kilocodeCli = require('./kilocode-cli');
 const hermes = require('./hermes');
 
-const editors = [cursor, windsurf, antigravity, claude, vscode, zed, opencode, codex, gemini, copilot, cursorAgent, commandcode, goose, kiro, codebuff, kiroCli, clineCli, kilocodeCli, hermes];
+const editors = [cursor, windsurf, antigravity, antigravityIde, claude, vscode, zed, opencode, codex, gemini, copilot, cursorAgent, commandcode, goose, kiro, codebuff, kiroCli, clineCli, kilocodeCli, hermes];
 
 // Build a unified source → display-label map from all editor modules
 const editorLabels = {};

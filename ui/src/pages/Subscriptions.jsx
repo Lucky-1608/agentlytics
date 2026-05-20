@@ -294,7 +294,7 @@ function EditorCard({ data }) {
   const cardRenderer = () => {
     switch (source) {
       case 'cursor': return <CursorCard data={data} />
-      case 'windsurf': case 'windsurf-next': case 'antigravity': return <WindsurfCard data={data} />
+      case 'windsurf': case 'windsurf-next': case 'antigravity': case 'antigravity-ide': return <WindsurfCard data={data} />
       case 'claude-code': return <ClaudeCodeCard data={data} />
       case 'vscode': case 'vscode-insiders': return <CopilotCard data={data} />
       case 'copilot-cli': return <CopilotCard data={data} />
